@@ -6,6 +6,7 @@ import { db, getLevel, getGuild, markDirty } from './db.js';
 import { baseEmbed, info, COLOR, EMOJI } from './embed.js';
 import { handleButton } from './interactions/buttons.js';
 import { handleModal } from './interactions/modals.js';
+import { handleTournamentMessage } from './interactions/tournament-msg.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,16 +47,36 @@ for (const file of fs.readdirSync(cmdDir).sort()) {
 
 console.log(`Loaded ${client.commands.size} commands.`);
 
+const rest = new REST().setToken(TOKEN);
+
+async function registerGuildCommands(guildId) {
+  try {
+    const data = await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: allCommandData });
+    console.log(`✅ Guild ${guildId}: registered ${Array.isArray(data) ? data.length : '?'} commands (instant).`);
+  } catch (e) {
+    console.error(`Guild command registration failed for ${guildId}:`, e.message);
+  }
+}
+
 client.once('clientReady', async () => {
   console.log(`✨ Logged in as ${client.user.tag} — ${client.guilds.cache.size} servers.`);
   client.user.setPresence({ activities: [{ name: `/help • ${client.commands.size} commands` }], status: 'online' });
-  const rest = new REST().setToken(TOKEN);
-  try {
-    const data = await rest.put(Routes.applicationCommands(CLIENT_ID), { body: allCommandData });
-    console.log(`✅ Registered ${Array.isArray(data) ? data.length : '?'} application commands.`);
-  } catch (e) {
-    console.error('Command registration failed:', e);
+  // Register per-guild for instant availability (global commands take ~1 hour to propagate)
+  for (const [gid] of client.guilds.cache) {
+    await registerGuildCommands(gid);
   }
+  // Also register globally as a backup
+  try {
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: allCommandData });
+    console.log(`✅ Global commands registered as backup.`);
+  } catch (e) {
+    console.error('Global command registration failed:', e.message);
+  }
+});
+
+client.on('guildCreate', (guild) => {
+  console.log(`➕ Joined guild: ${guild.name} (${guild.id}) — registering commands.`);
+  registerGuildCommands(guild.id);
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -105,6 +126,9 @@ const xpForLevel = (lvl) => 100 * (lvl + 1) ** 2;
 
 client.on('messageCreate', async (msg) => {
   if (msg.author.bot || !msg.guild) return;
+
+  // Tournament registration validation
+  handleTournamentMessage(msg).catch(e => console.error('Tournament msg error:', e));
 
   // AFK return
   if (db().afk[msg.author.id]) {

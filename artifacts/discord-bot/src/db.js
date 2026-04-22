@@ -28,6 +28,7 @@ function ensure() {
   data.suggestions ||= [];
   data.feedback ||= [];
   data.reports ||= [];
+  data.tournaments ||= {};
 }
 ensure();
 

@@ -12,7 +12,19 @@ export async function handleButton(interaction) {
   if (id.startsWith('trivia:')) return handleTrivia(interaction);
   if (id === 'ticket:open') return handleTicketOpen(interaction);
   if (id === 'ticket:close') return handleTicketClose(interaction);
+  if (id === 'tourney:create') return handleTourneyCreateOpen(interaction);
   // pagination handled inside its own collector — ignore here
+}
+
+async function handleTourneyCreateOpen(interaction) {
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)) {
+    return interaction.reply({ embeds: [err('Aapke paas Manage Channels permission nahi hai.')], ephemeral: true });
+  }
+  const modal = new ModalBuilder().setCustomId('tourney-modal:create').setTitle('Create Tournament')
+    .addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('name').setLabel('Tournament Name').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(2).setMaxLength(50).setPlaceholder('e.g. Summer Showdown 2026'),
+    ));
+  await interaction.showModal(modal);
 }
 
 async function handleTTT(interaction) {

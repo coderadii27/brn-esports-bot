@@ -1,10 +1,15 @@
 import { baseEmbed, ok, err, info, COLOR, EMOJI } from '../embed.js';
 import { _hang, _guess } from '../commands/games.js';
+import { setup as tourneySetup } from '../commands/tournament.js';
 
 export async function handleModal(interaction) {
   const id = interaction.customId;
   if (id.startsWith('guess-modal:')) return handleGuess(interaction);
   if (id.startsWith('hang-modal:')) return handleHang(interaction);
+  if (id === 'tourney-modal:create') {
+    const name = interaction.fields.getTextInputValue('name').trim();
+    return tourneySetup(interaction, name);
+  }
 }
 
 async function handleGuess(interaction) {

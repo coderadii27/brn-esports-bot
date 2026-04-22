@@ -6,6 +6,7 @@ import { db, getLevel, getGuild, markDirty } from './db.js';
 import { baseEmbed, info, COLOR, EMOJI } from './embed.js';
 import { handleButton } from './interactions/buttons.js';
 import { handleModal } from './interactions/modals.js';
+import { handleSelect } from './interactions/selects.js';
 import { handleTournamentMessage } from './interactions/tournament-msg.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -89,6 +90,8 @@ client.on('interactionCreate', async (interaction) => {
       await handleButton(interaction);
     } else if (interaction.isModalSubmit()) {
       await handleModal(interaction);
+    } else if (interaction.isAnySelectMenu()) {
+      await handleSelect(interaction);
     }
   } catch (e) {
     console.error('Interaction error:', e);

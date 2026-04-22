@@ -76,6 +76,7 @@ export default [
         'Notes & Todos': ['note-add','note-list','note-remove','note-clear','todo-add','todo-list','todo-done','todo-remove'],
         'Server Config': ['setwelcome','setlog','setautorole','setmodrole','settings-view','resetconfig'],
         'Tournament': ['tournament setup','tournament panel','tournament list','tournament delete'],
+        'Channel Privacy': ['private hide','private show'],
         'AI': ['ai-ask','ai-summarize','ai-translate'],
         'Misc': ['suggest','feedback','report','afk','snipe','help'],
       };

@@ -29,6 +29,7 @@ function ensure() {
   data.feedback ||= [];
   data.reports ||= [];
   data.tournaments ||= {};
+  data.giveaways ||= {};
 }
 ensure();
 

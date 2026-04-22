@@ -2,12 +2,13 @@ import { Client, GatewayIntentBits, Collection, REST, Routes, Partials } from 'd
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { db, getLevel, getGuild, markDirty } from './db.js';
-import { baseEmbed, info, COLOR, EMOJI } from './embed.js';
+import { db } from './db.js';
+import { baseEmbed, COLOR } from './embed.js';
 import { handleButton } from './interactions/buttons.js';
 import { handleModal } from './interactions/modals.js';
-import { handleSelect } from './interactions/selects.js';
 import { handleTournamentMessage } from './interactions/tournament-msg.js';
+import { handlePrefix } from './prefix.js';
+import { startGiveawayTicker } from './commands/giveaway.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,7 +27,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMessageReactions,
   ],
-  partials: [Partials.Channel, Partials.Message],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 client.commands = new Collection();
 const allCommandData = [];
@@ -38,148 +39,66 @@ for (const file of fs.readdirSync(cmdDir).sort()) {
   for (const cmd of mod.default ?? []) {
     if (!cmd?.data?.name) continue;
     if (client.commands.has(cmd.data.name)) {
-      console.warn(`Duplicate command name: ${cmd.data.name}`);
+      console.warn(`Duplicate command: ${cmd.data.name}`);
       continue;
     }
     client.commands.set(cmd.data.name, cmd);
     allCommandData.push(cmd.data.toJSON());
   }
 }
-
-console.log(`Loaded ${client.commands.size} commands.`);
+console.log(`Loaded ${client.commands.size} slash commands.`);
 
 const rest = new REST().setToken(TOKEN);
 
 async function registerGuildCommands(guildId) {
   try {
     const data = await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: allCommandData });
-    console.log(`✅ Guild ${guildId}: registered ${Array.isArray(data) ? data.length : '?'} commands (instant).`);
+    console.log(`✅ Guild ${guildId}: registered ${Array.isArray(data) ? data.length : '?'} commands.`);
   } catch (e) {
-    console.error(`Guild command registration failed for ${guildId}:`, e.message);
+    console.error(`Guild registration failed (${guildId}):`, e.message);
   }
 }
 
 client.once('clientReady', async () => {
   console.log(`✨ Logged in as ${client.user.tag} — ${client.guilds.cache.size} servers.`);
-  client.user.setPresence({ activities: [{ name: `/help • ${client.commands.size} commands` }], status: 'online' });
-  // Register per-guild for instant availability (global commands take ~1 hour to propagate)
-  for (const [gid] of client.guilds.cache) {
-    await registerGuildCommands(gid);
-  }
-  // Also register globally as a backup
+  client.user.setPresence({ activities: [{ name: `?help • /tournament • /gstart` }], status: 'online' });
+  for (const [gid] of client.guilds.cache) await registerGuildCommands(gid);
   try {
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: allCommandData });
-    console.log(`✅ Global commands registered as backup.`);
-  } catch (e) {
-    console.error('Global command registration failed:', e.message);
-  }
+    console.log('✅ Global commands synced.');
+  } catch (e) { console.error('Global registration failed:', e.message); }
+  startGiveawayTicker(client);
 });
 
-client.on('guildCreate', (guild) => {
-  console.log(`➕ Joined guild: ${guild.name} (${guild.id}) — registering commands.`);
-  registerGuildCommands(guild.id);
-});
+client.on('guildCreate', (g) => { console.log(`➕ Joined ${g.name}`); registerGuildCommands(g.id); });
 
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
       const cmd = client.commands.get(interaction.commandName);
-      if (!cmd) return;
-      await cmd.execute(interaction);
+      if (cmd) await cmd.execute(interaction);
+    } else if (interaction.isAutocomplete()) {
+      const cmd = client.commands.get(interaction.commandName);
+      if (cmd?.autocomplete) await cmd.autocomplete(interaction);
     } else if (interaction.isButton()) {
       await handleButton(interaction);
     } else if (interaction.isModalSubmit()) {
       await handleModal(interaction);
-    } else if (interaction.isAnySelectMenu()) {
-      await handleSelect(interaction);
     }
   } catch (e) {
     console.error('Interaction error:', e);
     try {
       const payload = { embeds: [baseEmbed({ title: '⛔  Error', description: 'Kuch galat ho gaya. Try again.', color: COLOR.danger })], ephemeral: true };
       if (interaction.deferred || interaction.replied) await interaction.followUp(payload);
-      else await interaction.reply(payload);
+      else if (interaction.isRepliable?.()) await interaction.reply(payload);
     } catch {}
   }
 });
-
-// Welcome + auto-role
-client.on('guildMemberAdd', async (member) => {
-  const g = getGuild(member.guild.id);
-  if (g.autoRole) {
-    try { await member.roles.add(g.autoRole); } catch {}
-  }
-  if (g.welcomeChannel) {
-    const ch = member.guild.channels.cache.get(g.welcomeChannel);
-    if (ch && ch.isTextBased()) {
-      const e = baseEmbed({
-        title: `${EMOJI.spark}  Welcome to ${member.guild.name}!`,
-        description: `Hey <@${member.id}> — itna pyara server me aane ke liye thanks!\nMember **#${member.guild.memberCount}**.`,
-        color: COLOR.accent,
-        thumbnail: member.user.displayAvatarURL({ size: 256 }),
-      });
-      ch.send({ embeds: [e] }).catch(() => {});
-    }
-  }
-});
-
-// XP on message + AFK + snipe
-const XP_COOLDOWN = 60_000;
-const xpForLevel = (lvl) => 100 * (lvl + 1) ** 2;
 
 client.on('messageCreate', async (msg) => {
   if (msg.author.bot || !msg.guild) return;
-
-  // Tournament registration validation
+  handlePrefix(msg).catch(e => console.error('Prefix error:', e));
   handleTournamentMessage(msg).catch(e => console.error('Tournament msg error:', e));
-
-  // AFK return
-  if (db().afk[msg.author.id]) {
-    delete db().afk[msg.author.id]; markDirty();
-    msg.reply({ embeds: [info(`Welcome back! AFK status removed.`)], allowedMentions: { repliedUser: false } }).catch(() => {});
-  }
-  // AFK mention notify
-  for (const [uid] of msg.mentions.users) {
-    const a = db().afk[uid];
-    if (a) {
-      msg.channel.send({ embeds: [info(`<@${uid}> is AFK: ${a.reason} • <t:${Math.floor(a.at / 1000)}:R>`)] }).catch(() => {});
-    }
-  }
-
-  // XP gain
-  const l = getLevel(msg.author.id);
-  if (Date.now() - (l.lastMsg ?? 0) > XP_COOLDOWN) {
-    l.lastMsg = Date.now();
-    const gain = 10 + Math.floor(Math.random() * 15);
-    l.xp += gain;
-    while (l.xp >= xpForLevel(l.level)) {
-      l.xp -= xpForLevel(l.level);
-      l.level++;
-      msg.channel.send({ embeds: [baseEmbed({ title: `${EMOJI.trophy}  Level Up!`, description: `<@${msg.author.id}> reached **Level ${l.level}**!`, color: COLOR.gold })] }).catch(() => {});
-    }
-    markDirty();
-  }
 });
-
-client.on('messageDelete', (msg) => {
-  if (!msg.guild || msg.author?.bot) return;
-  db().snipes[msg.channelId] = { content: msg.content ?? '', author: msg.author?.tag ?? 'Unknown', at: Date.now() };
-  markDirty();
-});
-
-// Reminder ticker
-setInterval(async () => {
-  const now = Date.now();
-  const due = db().reminders.filter(r => r.at <= now);
-  if (!due.length) return;
-  db().reminders = db().reminders.filter(r => r.at > now);
-  markDirty();
-  for (const r of due) {
-    try {
-      const ch = await client.channels.fetch(r.channelId);
-      if (ch?.isTextBased()) ch.send({ content: `<@${r.userId}>`, embeds: [baseEmbed({ title: `${EMOJI.clock}  Reminder`, description: r.text, color: COLOR.info })] }).catch(() => {});
-    } catch {}
-  }
-}, 15_000);
 
 client.login(TOKEN);

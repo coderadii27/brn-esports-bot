@@ -19,7 +19,7 @@ export const EMOJI = {
   arrowL: '◀️', arrowR: '▶️', first: '⏮️', last: '⏭️', stop: '⏹️',
 };
 
-const FOOTER = '✨ Nexus • crafted with care';
+const FOOTER = 'CYCLOPS • crafted with care';
 
 export function baseEmbed(opts = {}) {
   const e = new EmbedBuilder().setColor(opts.color ?? COLOR.primary).setTimestamp();

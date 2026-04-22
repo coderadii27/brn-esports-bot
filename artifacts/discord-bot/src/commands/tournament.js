@@ -17,32 +17,27 @@ export const TOURNEY_CHANNELS = [
   { key: 'query',                name: '💬│query',                topic: 'Ask any question — staff will reply' },
 ];
 
-const REG_FORMAT = [
-  '```yaml',
-  'Team Name: <your team name>',
-  'Team Tag: <2-5 letters>',
-  'Captain: @captain',
-  'Players:',
-  '  1. @player1',
-  '  2. @player2',
-  '  3. @player3',
-  '  4. @player4',
-  'Substitute: @sub  (optional)',
-  'Contact: <discord/phone/email>',
-  '```',
-].join('\n');
+function buildRegFormat(teamSize) {
+  const lines = ['```yaml', 'Team Name: <your team name>', 'Team Tag: <2-5 letters>', 'Captain: @captain', 'Players:'];
+  for (let i = 1; i <= teamSize; i++) lines.push(`  ${i}. @player${i}`);
+  lines.push('Substitute: @sub  (optional)');
+  lines.push('Contact: <discord/phone/email>');
+  lines.push('```');
+  return lines.join('\n');
+}
 
 const STARTER_CONTENT = {
-  info: () => baseEmbed({
-    title: '📢  Tournament Information',
+  info: (t) => baseEmbed({
+    title: `📢  ${t.name} — Information`,
     description: '**Welcome to the official tournament hub!**\n\nYahaan aapko tournament ki saari important info milegi — format, prize pool, schedule, aur sab kuch.\n\nNeeche channels ko explore karo aur stay tuned for updates.',
     color: COLOR.primary,
     fields: [
       { name: '🎮  Game', value: 'TBA', inline: true },
-      { name: '👥  Format', value: 'TBA', inline: true },
+      { name: '👥  Team Size', value: `${t.teamSize} players`, inline: true },
+      { name: '🎟️  Slots', value: `${t.slots} teams`, inline: true },
       { name: '🏆  Prize Pool', value: 'TBA', inline: true },
     ],
-    footer: { text: 'Edit this message to add tournament details.' },
+    footer: { text: 'Edit this message to add more details.' },
   }),
   rules: () => baseEmbed({
     title: '📜  Tournament Rules',
@@ -61,8 +56,8 @@ const STARTER_CONTENT = {
     ].join('\n'),
     footer: { text: 'Rules can be updated anytime — keep checking.' },
   }),
-  updates: () => baseEmbed({ title: '🆕  Updates', description: 'Tournament ki sab latest updates yahaan post hongi. Notifications on rakho!', color: COLOR.info }),
-  'how-to-register': () => baseEmbed({
+  updates: (t) => baseEmbed({ title: `🆕  ${t.name} — Updates`, description: 'Tournament ki sab latest updates yahaan post hongi. Notifications on rakho!', color: COLOR.info }),
+  'how-to-register': (t) => baseEmbed({
     title: '❓  How to Register',
     color: COLOR.accent,
     description: [
@@ -72,23 +67,25 @@ const STARTER_CONTENT = {
       '**Step 4.** Confirmed teams <#CONFIRM_TEAMS_ID> me show hongi.',
       '**Step 5.** Galat format hua to bot ❌ react karke reason batayega — fix karke phir se post karo.',
       '',
-      '**Pro tip:** Sab players ko @mention karo, plain names accept nahi honge.',
+      `**🎟️ Total slots:** ${t.slots} teams  •  **👥 Players per team:** ${t.teamSize}`,
+      '',
+      '**Pro tip:** Sab players ko @mention karo, plain names accept nahi honge. First-come-first-served basis pe slots fill honge.',
     ].join('\n'),
   }),
-  'registration-format': () => baseEmbed({
+  'registration-format': (t) => baseEmbed({
     title: '📋  Registration Format',
     color: COLOR.accent,
-    description: `Exact yahi format use karo. Copy → paste in <#REGISTRATION_ID> → fill karo.\n\n${REG_FORMAT}\n\n**Required fields:** Team Name, Team Tag, Captain, Players (min 4), Contact.\n**Optional:** Substitute.`,
+    description: `Exact yahi format use karo. Copy → paste in <#REGISTRATION_ID> → fill karo.\n\n${buildRegFormat(t.teamSize)}\n\n**Required:** Team Name, Team Tag, Captain, Players (exactly **${t.teamSize}** @mentioned), Contact.\n**Optional:** Substitute.`,
   }),
-  registration: () => baseEmbed({
+  registration: (t) => baseEmbed({
     title: '📝  Submit Your Registration',
     color: COLOR.primary,
-    description: `Apni team registration yahaan post karo using the exact format from <#REG_FORMAT_ID>.\n\nBot automatically validate karke ✅ ya ❌ react karega.\n\n**Don't spam.** Ek team = ek registration.`,
+    description: `Apni team registration yahaan post karo using the exact format from <#REG_FORMAT_ID>.\n\nBot automatically validate karke ✅ ya ❌ react karega.\n\n**🎟️ Total slots:** ${t.slots} teams  •  **👥 Players per team:** ${t.teamSize}\n\n**Don't spam.** Ek team = ek registration.`,
   }),
-  'confirm-teams': () => baseEmbed({
+  'confirm-teams': (t) => baseEmbed({
     title: '✅  Confirmed Teams',
     color: COLOR.success,
-    description: 'Officially confirmed teams ki list yahaan dikhegi. Jaise hi koi team approve hoti hai, automatically yahaan add ho jayegi.',
+    description: `Officially confirmed teams ki list yahaan dikhegi (max **${t.slots}** teams). Jaise hi koi team approve hoti hai, automatically yahaan add ho jayegi.`,
   }),
   roadmaps: () => baseEmbed({
     title: '🗺️  Tournament Roadmap',
@@ -130,7 +127,9 @@ const data = new SlashCommandBuilder()
   .setDescription('Tournament organize system')
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels.toString())
   .addSubcommand(s => s.setName('setup').setDescription('Pura tournament category + channels create karo')
-    .addStringOption(o => o.setName('name').setDescription('Tournament ka naam').setRequired(true).setMaxLength(50)))
+    .addStringOption(o => o.setName('name').setDescription('Tournament ka naam').setRequired(true).setMaxLength(50))
+    .addIntegerOption(o => o.setName('slots').setDescription('Total team slots').setRequired(true).setMinValue(2).setMaxValue(256))
+    .addIntegerOption(o => o.setName('team-size').setDescription('Players per team').setRequired(true).setMinValue(1).setMaxValue(15)))
   .addSubcommand(s => s.setName('panel').setDescription('Setup panel button bhejo'))
   .addSubcommand(s => s.setName('list').setDescription('Iss server ke tournaments dekho'))
   .addSubcommand(s => s.setName('delete').setDescription('Tournament aur uska category delete karo')
@@ -178,7 +177,11 @@ async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
   switch (sub) {
     case 'panel':       return panel(interaction);
-    case 'setup':       return setup(interaction, interaction.options.getString('name'));
+    case 'setup':       return setup(interaction, {
+      name: interaction.options.getString('name'),
+      slots: interaction.options.getInteger('slots'),
+      teamSize: interaction.options.getInteger('team-size'),
+    });
     case 'list':        return list(interaction);
     case 'delete':      return remove(interaction);
     case 'announce':    return announce(interaction);
@@ -208,7 +211,11 @@ async function panel(interaction) {
   await interaction.reply({ embeds: [e], components: [row] });
 }
 
-export async function setup(interaction, name) {
+export async function setup(interaction, opts) {
+  const name = typeof opts === 'string' ? opts : opts.name;
+  const slots = Math.max(2, Math.min(256, Number(opts?.slots) || 16));
+  const teamSize = Math.max(1, Math.min(15, Number(opts?.teamSize) || 4));
+
   if (!interaction.guild) return interaction.reply({ embeds: [err('Sirf server me chalega.')], ephemeral: true });
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)) {
     return interaction.reply({ embeds: [err('Aapke paas Manage Channels permission nahi hai.')], ephemeral: true });
@@ -243,14 +250,17 @@ export async function setup(interaction, name) {
     }
 
     const tid = `${interaction.guild.id}:${category.id}`;
-    db().tournaments[tid] = {
+    const tObj = {
       id: tid, guildId: interaction.guild.id, name,
+      slots, teamSize,
       categoryId: category.id, channels: created,
       registrationChannelId: created['registration'],
       confirmChannelId: created['confirm-teams'],
       formatChannelId: created['registration-format'],
       teams: [], createdAt: Date.now(), createdBy: interaction.user.id,
+      registrationClosed: false,
     };
+    db().tournaments[tid] = tObj;
     markDirty();
 
     const sub = (s) => s
@@ -261,7 +271,7 @@ export async function setup(interaction, name) {
     for (const ch of TOURNEY_CHANNELS) {
       const channel = interaction.guild.channels.cache.get(created[ch.key]);
       if (!channel) continue;
-      const embed = STARTER_CONTENT[ch.key]();
+      const embed = STARTER_CONTENT[ch.key](tObj);
       if (embed.data.description) embed.setDescription(sub(embed.data.description));
       try { await channel.send({ embeds: [embed] }); } catch {}
     }
@@ -271,9 +281,11 @@ export async function setup(interaction, name) {
       description: `**${name}** successfully setup ho gaya — <#${created['info']}> se start karo.\n\nID: \`${tid}\``,
       color: COLOR.success,
       fields: [
-        { name: 'Category', value: `<#${category.id}>`, inline: true },
-        { name: 'Registration', value: `<#${created['registration']}>`, inline: true },
-        { name: 'Confirm Teams', value: `<#${created['confirm-teams']}>`, inline: true },
+        { name: '🎟️ Slots', value: `${slots} teams`, inline: true },
+        { name: '👥 Team Size', value: `${teamSize} players`, inline: true },
+        { name: '📂 Category', value: `<#${category.id}>`, inline: true },
+        { name: '📝 Registration', value: `<#${created['registration']}>`, inline: true },
+        { name: '✅ Confirmed', value: `<#${created['confirm-teams']}>`, inline: true },
       ],
     });
     if (interaction.deferred) await interaction.editReply({ embeds: [okEmbed] });

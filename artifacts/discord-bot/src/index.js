@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Collection, REST, Routes, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, Collection, REST, Routes, Partials, ActivityType } from 'discord.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -61,7 +61,14 @@ async function registerGuildCommands(guildId) {
 
 client.once('clientReady', async () => {
   console.log(`✨ Logged in as ${client.user.tag} — ${client.guilds.cache.size} servers.`);
-  client.user.setPresence({ activities: [{ name: `?help • /tournament • /gstart` }], status: 'online' });
+  client.user.setPresence({
+    status: 'dnd',
+    activities: [{ name: 'Custom', type: ActivityType.Custom, state: 'Organising Tournaments at BRN ESPORTS' }],
+  });
+  try {
+    await client.application.edit({ description: 'BRN ESPORTS OFFICIAL BOT' });
+    console.log('✅ App description updated.');
+  } catch (e) { console.error('App description update failed:', e.message); }
   for (const [gid] of client.guilds.cache) await registerGuildCommands(gid);
   try {
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: allCommandData });

@@ -40,11 +40,10 @@ function parseRegistration(content) {
     errors.push('**Team Tag** 2-6 characters hona chahiye.');
   }
 
-  // Players: must be at least 4 mentions
+  // Players: must be exact team size mentions
   let playerMentions = [];
   if (fields.players) {
     playerMentions = [...fields.players.matchAll(/<@!?(\d+)>/g)].map(m => m[1]);
-    if (playerMentions.length < 4) errors.push(`**Players**: minimum 4 @mentioned players chahiye (mile ${playerMentions.length}).`);
   }
 
   // Captain id
@@ -68,10 +67,23 @@ export async function handleTournamentMessage(message) {
   const t = findTournamentByRegChannel(message.channel.id);
   if (!t) return;
 
+  // If registration is closed, react with 🔒 and inform
+  if (t.registrationClosed || t.teams.length >= (t.slots ?? Infinity)) {
+    await message.react('🔒').catch(() => {});
+    return;
+  }
+
   // Ignore one-line / short messages (likely chat)
   if (message.content.length < 30 || !/team\s*name/i.test(message.content)) return;
 
   const parsed = parseRegistration(message.content);
+
+  // Team-size validation against tournament config
+  const requiredSize = t.teamSize ?? 4;
+  if (parsed.playerIds.length !== requiredSize) {
+    parsed.errors.push(`**Players**: exactly **${requiredSize}** @mentioned players chahiye (mile ${parsed.playerIds.length}).`);
+    parsed.valid = false;
+  }
 
   if (!parsed.valid) {
     await message.react('❌').catch(() => {});
@@ -111,11 +123,25 @@ export async function handleTournamentMessage(message) {
 
   await message.react('✅').catch(() => {});
 
+  // Auto-close registration when slots are full
+  if (t.teams.length >= (t.slots ?? Infinity) && !t.registrationClosed) {
+    t.registrationClosed = true; markDirty();
+    try {
+      const everyone = message.guild.roles.everyone;
+      await message.channel.permissionOverwrites.edit(everyone, { SendMessages: false }, { reason: 'All slots filled' });
+      await message.channel.send({ embeds: [baseEmbed({
+        title: '🔒  Registration Closed',
+        description: `Saare **${t.slots}** slots full ho gaye! Registration ab band hai.\n\nConfirmed teams dekho <#${t.confirmChannelId}> me.`,
+        color: COLOR.warning,
+      })] });
+    } catch {}
+  }
+
   // Post to confirm-teams
   const confirmCh = message.guild.channels.cache.get(t.confirmChannelId);
   if (confirmCh?.isTextBased()) {
     const e = baseEmbed({
-      title: `${EMOJI.spark}  Team #${t.teams.length} Confirmed`,
+      title: `${EMOJI.spark}  Team #${t.teams.length} / ${t.slots} Confirmed`,
       color: COLOR.success,
       fields: [
         { name: 'Team', value: `**${team.teamName}**  \`[${team.teamTag}]\``, inline: false },

@@ -151,6 +151,10 @@ const data = new SlashCommandBuilder()
   .addSubcommand(s => s.setName('set-points').setDescription('Point table update karo (markdown table)')
     .addStringOption(o => o.setName('id').setDescription('Tournament ID').setRequired(true).setAutocomplete(true))
     .addStringOption(o => o.setName('table').setDescription('Pipe-separated rows: TeamA|3|1|9 ; TeamB|2|2|6').setRequired(true)))
+  .addSubcommand(s => s.setName('close').setDescription('Registration band karo (slots fill hone se pehle bhi)')
+    .addStringOption(o => o.setName('id').setDescription('Tournament ID').setRequired(true).setAutocomplete(true)))
+  .addSubcommand(s => s.setName('open').setDescription('Band ki hui registration dobara open karo')
+    .addStringOption(o => o.setName('id').setDescription('Tournament ID').setRequired(true).setAutocomplete(true)))
   .addSubcommand(s => s.setName('lock').setDescription('Tournament channels ko private banao')
     .addStringOption(o => o.setName('id').setDescription('Tournament ID').setRequired(true).setAutocomplete(true)))
   .addSubcommand(s => s.setName('unlock').setDescription('Tournament channels public karo')
@@ -189,6 +193,8 @@ async function execute(interaction) {
     case 'remove-team': return removeTeam(interaction);
     case 'add-match':   return addMatch(interaction);
     case 'set-points':  return setPoints(interaction);
+    case 'close':       return closeRegistration(interaction);
+    case 'open':        return openRegistration(interaction);
     case 'lock':        return lockChannels(interaction, true);
     case 'unlock':      return lockChannels(interaction, false);
     case 'mvp':         return mvp(interaction);
@@ -416,6 +422,47 @@ async function setPoints(interaction) {
   } catch (e2) {
     await interaction.reply({ embeds: [err(`Failed: ${e2.message}`)], ephemeral: true });
   }
+}
+
+async function closeRegistration(interaction) {
+  const t = getTournament(interaction.options.getString('id'), interaction.guild.id);
+  if (!t) return interaction.reply({ embeds: [err('Tournament nahi mila.')], ephemeral: true });
+  if (t.registrationClosed) return interaction.reply({ embeds: [info('Registration already band hai.')], ephemeral: true });
+  await interaction.deferReply({ ephemeral: true });
+  t.registrationClosed = true; markDirty();
+  const regCh = interaction.guild.channels.cache.get(t.registrationChannelId);
+  try {
+    if (regCh) {
+      await regCh.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false }, { reason: `Registration closed by ${interaction.user.tag}` });
+      await regCh.send({ embeds: [baseEmbed({
+        title: '🔒  Registration Closed',
+        description: `Registration ab band kar di gayi hai by <@${interaction.user.id}>.\n\n**${t.teams.length} / ${t.slots}** teams confirmed. Confirmed list dekho <#${t.confirmChannelId}> me.`,
+        color: COLOR.warning,
+      })] });
+    }
+  } catch {}
+  await interaction.editReply({ embeds: [ok(`Registration closed for **${t.name}** (${t.teams.length}/${t.slots} teams).`)] });
+}
+
+async function openRegistration(interaction) {
+  const t = getTournament(interaction.options.getString('id'), interaction.guild.id);
+  if (!t) return interaction.reply({ embeds: [err('Tournament nahi mila.')], ephemeral: true });
+  if (t.teams.length >= t.slots) return interaction.reply({ embeds: [err(`Saare ${t.slots} slots already full hain. Pehle kuch teams remove karo.`)], ephemeral: true });
+  if (!t.registrationClosed) return interaction.reply({ embeds: [info('Registration already open hai.')], ephemeral: true });
+  await interaction.deferReply({ ephemeral: true });
+  t.registrationClosed = false; markDirty();
+  const regCh = interaction.guild.channels.cache.get(t.registrationChannelId);
+  try {
+    if (regCh) {
+      await regCh.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: null }, { reason: `Registration reopened by ${interaction.user.tag}` });
+      await regCh.send({ embeds: [baseEmbed({
+        title: '🔓  Registration Reopened',
+        description: `Registration phir se chaalu hai! **${t.slots - t.teams.length}** slots bache hain.\n\nFormat dekho <#${t.formatChannelId}> me.`,
+        color: COLOR.success,
+      })] });
+    }
+  } catch {}
+  await interaction.editReply({ embeds: [ok(`Registration reopened for **${t.name}** (${t.slots - t.teams.length} slots remaining).`)] });
 }
 
 async function lockChannels(interaction, lock) {
